@@ -3,11 +3,12 @@ import gradio as gr
 import weaviate
 from weaviate.embedded import EmbeddedOptions
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.document_loaders import TextLoader, PyPDFLoader
-from langchain.llms import OpenAI
+from langchain_community.document_loaders import TextLoader, PyPDFLoader
+from langchain_openai import OpenAI
+from langchain.chains.question_answering import load_qa_chain
 from langchain.chains import RetrievalQA
-from langchain.vectorstores import Weaviate
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.vectorstores import Weaviate
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from dotenv import load_dotenv
 import tempfile
 
