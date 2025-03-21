@@ -1,0 +1,20 @@
+Weaviate là một vector database mã nguồn mở được thiết kế để lưu trữ và tìm kiếm dữ liệu dựa trên ngữ nghĩa. Nó sử dụng các mô hình embedding để chuyển đổi dữ liệu thành vector và cho phép tìm kiếm dựa trên độ tương đồng ngữ nghĩa.
+
+Weaviate có thể được sử dụng trong nhiều ứng dụng khác nhau, bao gồm:
+1. Tìm kiếm ngữ nghĩa
+2. Hệ thống khuyến nghị
+3. Phân loại tự động
+4. Ứng dụng RAG (Retrieval Augmented Generation)
+
+Retrieval Augmented Generation (RAG) là một kỹ thuật kết hợp giữa việc truy xuất thông tin và tạo văn bản. Nó hoạt động bằng cách:
+- Truy xuất thông tin liên quan từ một kho dữ liệu
+- Sử dụng thông tin đó để tăng cường đầu vào cho mô hình ngôn ngữ lớn (LLM)
+- Tạo ra câu trả lời chính xác và có nguồn gốc rõ ràng
+
+Gradio là một thư viện Python cho phép tạo giao diện người dùng nhanh chóng cho các mô hình máy học. Nó cung cấp các thành phần giao diện đơn giản và dễ sử dụng, cho phép tạo các ứng dụng web tương tác mà không cần kiến thức về phát triển web.
+
+Khi kết hợp Weaviate, Gradio và các mô hình ngôn ngữ lớn, chúng ta có thể tạo ra các ứng dụng RAG mạnh mẽ có khả năng:
+- Nhập và xử lý dữ liệu từ nhiều nguồn khác nhau
+- Tìm kiếm thông tin liên quan dựa trên ngữ nghĩa
+- Tạo ra câu trả lời chính xác và có nguồn gốc rõ ràng
+- Cung cấp giao diện người dùng thân thiện và dễ sử dụng
