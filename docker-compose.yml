@@ -1,0 +1,6 @@
+services:
+    transformers-inference:
+        ports:
+            - 8000:8080
+        container_name: embedding-model
+        image: semitechnologies/transformers-inference:sentence-transformers-multi-qa-MiniLM-L6-cos-v1
