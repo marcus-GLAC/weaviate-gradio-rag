@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import tempfile
@@ -15,6 +16,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 
+# Cấu hình logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Load biến môi trường
 load_dotenv()
 
@@ -24,9 +29,9 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "gemini")
 
 # Lấy cài đặt mô hình
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
 GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0"))
 
 # Lấy URL Weaviate từ biến môi trường hoặc dùng giá trị mặc định
@@ -39,54 +44,36 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 # Kết nối Weaviate
 def connect_to_weaviate():
     try:
-        # Lấy URL từ biến môi trường
         weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
-        print(f"Đang kết nối đến Weaviate tại: {weaviate_url}")
+        logger.info(f"Đang kết nối đến Weaviate tại: {weaviate_url}")
         
         # Thử ping trước khi kết nối
         import requests
         try:
             response = requests.get(f"{weaviate_url}/v1/meta")
             if response.status_code != 200:
-                print(f"Weaviate không phản hồi tại {weaviate_url}, status code: {response.status_code}")
-                print(f"Response: {response.text}")
+                logger.error(f"Weaviate không phản hồi tại {weaviate_url}, status code: {response.status_code}")
+                logger.error(f"Response: {response.text}")
             else:
-                print(f"Ping thành công đến Weaviate tại {weaviate_url}")
+                logger.info(f"Ping thành công đến Weaviate tại {weaviate_url}")
         except requests.exceptions.RequestException as e:
-            print(f"Không thể ping đến Weaviate: {e}")
+            logger.error(f"Không thể ping đến Weaviate: {e}")
         
-        # Sử dụng client v3 để đảm bảo tương thích
-        try:
-            # Thử với client v3 trước
-            import weaviate
-            print("Thử kết nối với Weaviate client v3")
-            client = weaviate.Client(url=weaviate_url)
-            print(f"Kết nối thành công với Weaviate client v3: {client.is_ready()}")
-            return client
-        except Exception as e:
-            print(f"Lỗi khi kết nối với client v3: {e}")
-            
-            # Thử với client v4 nếu v3 không hoạt động
-            try:
-                print("Thử kết nối với Weaviate client v4")
-                client = weaviate.WeaviateClient(
-                    connection_params=weaviate.connect.ConnectionParams.from_url(
-                        url=weaviate_url,
-                        timeout_config=(5, 15)
-                    )
-                )
-                print(f"Kết nối thành công với Weaviate client v4: {client.is_ready()}")
-                return client
-            except Exception as e2:
-                print(f"Lỗi khi kết nối với client v4: {e2}")
-                raise Exception(f"Không thể kết nối với Weaviate qua cả v3 và v4: {e}, {e2}")
-        
+        # Sử dụng client v4
+        client = weaviate.WeaviateClient(
+            connection_params=weaviate.connect.ConnectionParams.from_url(
+                url=weaviate_url,
+                timeout_config=(5, 15)
+            )
+        )
+        logger.info(f"Kết nối thành công với Weaviate: {client.is_ready()}")
+        return client
     except Exception as e:
-        print(f"Lỗi kết nối đến Weaviate: {e}")
-        print("Vui lòng kiểm tra:")
-        print("1. Docker và container Weaviate đã chạy chưa? (docker ps)")
-        print("2. URL kết nối có đúng không? (mặc định: http://localhost:8080)")
-        print("3. Weaviate container có lỗi không? (docker logs weaviate-db)")
+        logger.error(f"Lỗi kết nối đến Weaviate: {e}")
+        logger.error("Vui lòng kiểm tra:")
+        logger.error("1. Docker và container Weaviate đã chạy chưa? (docker ps)")
+        logger.error("2. URL kết nối có đúng không? (mặc định: http://localhost:8080)")
+        logger.error("3. Weaviate container có lỗi không? (docker logs weaviate-db)")
         return None
 
 client = connect_to_weaviate()
@@ -100,83 +87,43 @@ def create_schema():
         return "Không thể kết nối với Weaviate"
     
     try:
-        # Kiểm tra loại client để xử lý tương ứng
-        if hasattr(client, 'collections'):
-            # Client v4
-            print("Đang sử dụng Weaviate Client v4 để tạo schema")
-            try:
-                # Thử lấy collection
-                collection = client.collections.get(COLLECTION_NAME)
-                print(f"Collection '{COLLECTION_NAME}' đã tồn tại (v4)")
-                return True
-            except Exception as e:
-                print(f"Collection chưa tồn tại, đang tạo mới (v4): {e}")
-                # Collection chưa tồn tại, tạo mới
-                client.collections.create(
-                    name=COLLECTION_NAME,
-                    description="Document chunks for RAG",
-                    properties=[
-                        {
-                            "name": "content",
-                            "dataType": ["text"],
-                            "description": "The content of the document chunk",
-                            "indexSearchable": True,
-                        },
-                        {
-                            "name": "source",
-                            "dataType": ["text"],
-                            "description": "The source file of the document",
-                            "indexSearchable": True,
-                        },
-                        {
-                            "name": "chunk_id",
-                            "dataType": ["text"],
-                            "description": "The chunk ID within the document",
-                        }
-                    ],
-                    vectorizer_config=weaviate.classes.Configure.Vectorizer.text2vec_transformers(),
-                )
-                print(f"Collection '{COLLECTION_NAME}' đã được tạo thành công (v4)")
-                return True
-        else:
-            # Client v3
-            print("Đang sử dụng Weaviate Client v3 để tạo schema")
-            # Kiểm tra xem schema đã tồn tại chưa
-            schema = client.schema.get()
-            existing_classes = [c["class"] for c in schema.get("classes", [])]
-            
-            if COLLECTION_NAME not in existing_classes:
-                # Tạo schema với client v3
-                schema_definition = {
-                    "class": COLLECTION_NAME,
-                    "description": "Document chunks for RAG",
-                    "vectorizer": "text2vec-transformers",
-                    "properties": [
-                        {
-                            "name": "content",
-                            "dataType": ["text"],
-                            "description": "The content of the document chunk",
-                        },
-                        {
-                            "name": "source",
-                            "dataType": ["text"],
-                            "description": "The source file of the document",
-                        },
-                        {
-                            "name": "chunk_id",
-                            "dataType": ["text"],
-                            "description": "The chunk ID within the document",
-                        }
-                    ]
-                }
-                client.schema.create_class(schema_definition)
-                print(f"Schema '{COLLECTION_NAME}' đã được tạo thành công (v3)")
-            else:
-                print(f"Schema '{COLLECTION_NAME}' đã tồn tại (v3)")
-            
+        logger.info("Đang tạo schema cho Weaviate")
+        # Thử lấy collection
+        try:
+            collection = client.collections.get(COLLECTION_NAME)
+            logger.info(f"Collection '{COLLECTION_NAME}' đã tồn tại")
+            return True
+        except Exception as e:
+            logger.info(f"Collection chưa tồn tại, đang tạo mới: {e}")
+            # Collection chưa tồn tại, tạo mới
+            client.collections.create(
+                name=COLLECTION_NAME,
+                description="Document chunks for RAG",
+                properties=[
+                    {
+                        "name": "content",
+                        "dataType": ["text"],
+                        "description": "The content of the document chunk",
+                        "indexSearchable": True,
+                    },
+                    {
+                        "name": "source",
+                        "dataType": ["text"],
+                        "description": "The source file of the document",
+                        "indexSearchable": True,
+                    },
+                    {
+                        "name": "chunk_id",
+                        "dataType": ["text"],
+                        "description": "The chunk ID within the document",
+                    }
+                ],
+                vectorizer_config=weaviate.classes.Configure.Vectorizer.text2vec_transformers(),
+            )
+            logger.info(f"Collection '{COLLECTION_NAME}' đã được tạo thành công")
             return True
     except Exception as e:
-        print(f"Lỗi khi tạo schema: {e}")
+        logger.error(f"Lỗi khi tạo schema: {e}")
         return False
 
 # Tạo schema
@@ -193,7 +140,6 @@ def get_vectorstore():
         return None
     
     try:
-        # Thiết lập Weaviate cho Langchain
         return Weaviate(
             client=client,
             index_name=COLLECTION_NAME,
@@ -202,18 +148,8 @@ def get_vectorstore():
             by_text=False  # Sử dụng Weaviate's vectorizer
         )
     except Exception as e:
-        print(f"Lỗi khi tạo vector store: {str(e)}")
-        try:
-            # Thử với cấu hình khác
-            return Weaviate(
-                client=client,
-                index_name=COLLECTION_NAME,
-                text_key="content",
-                embedding=embeddings,
-            )
-        except Exception as e2:
-            print(f"Lỗi khi tạo vector store (lần 2): {str(e2)}")
-            return None
+        logger.error(f"Lỗi khi tạo vector store: {str(e)}")
+        return None
 
 # Tạo retriever
 def get_retriever(k=5):
@@ -225,20 +161,15 @@ def get_retriever(k=5):
 # Khởi tạo LLM dựa trên provider
 def get_llm(provider=DEFAULT_LLM_PROVIDER, temperature=None):
     if provider == "openai" and OPENAI_API_KEY:
-        # Đảm bảo model là một trong những model được cho phép
-        model_name = OPENAI_MODEL
-        if model_name not in ["gpt-4o", "gpt-4o-mini"]:
-            model_name = "gpt-4o-mini"  # Mặc định nếu cấu hình không hợp lệ
-            
         return ChatOpenAI(
             openai_api_key=OPENAI_API_KEY,
-            model_name=model_name,
+            model_name=OPENAI_MODEL,
             temperature=OPENAI_TEMPERATURE if temperature is None else temperature
         )
     elif provider == "gemini" and GOOGLE_API_KEY:
         return ChatGoogleGenerativeAI(
             google_api_key=GOOGLE_API_KEY,
-            model="gemini-2.0-flash",  # Chỉ cho phép model này
+            model=GEMINI_MODEL,
             temperature=GEMINI_TEMPERATURE if temperature is None else temperature
         )
     else:
@@ -280,6 +211,8 @@ def process_file(file_obj):
         with open(saved_path, 'wb') as f:
             shutil.copyfileobj(file_obj.file, f)
         
+        logger.info(f"Đã lưu file {saved_path}")
+        
         # Xử lý dựa trên loại file
         if file_extension == '.pdf':
             loader = PyPDFLoader(saved_path)
@@ -298,34 +231,26 @@ def process_file(file_obj):
         )
         chunks = text_splitter.split_documents(documents)
         
-        # Import các chunk vào Weaviate dựa vào loại client
+        logger.info(f"Đã chia file thành {len(chunks)} chunks")
+        
+        # Import các chunk vào Weaviate
+        collection = client.collections.get(COLLECTION_NAME)
         for i, chunk in enumerate(chunks):
             chunk_id = str(uuid.uuid4())
-            # Kiểm tra loại client
-            if hasattr(client, 'collections'):
-                # Client v4
-                collection = client.collections.get(COLLECTION_NAME)
-                collection.data.insert(
-                    properties={
-                        "content": chunk.page_content,
-                        "source": original_filename,
-                        "chunk_id": chunk_id
-                    }
-                )
-            else:
-                # Client v3
-                client.data_object.create(
-                    {
-                        "content": chunk.page_content,
-                        "source": original_filename,
-                        "chunk_id": chunk_id
-                    },
-                    COLLECTION_NAME
-                )
+            collection.data.insert(
+                properties={
+                    "content": chunk.page_content,
+                    "source": original_filename,
+                    "chunk_id": chunk_id
+                }
+            )
+            if (i + 1) % 10 == 0:
+                logger.info(f"Đã import {i + 1}/{len(chunks)} chunks")
         
+        logger.info(f"Đã import thành công {len(chunks)} chunks từ file {original_filename}")
         return f"Đã import thành công {len(chunks)} chunks từ file {original_filename}"
     except Exception as e:
-        print(f"Lỗi chi tiết khi xử lý file: {str(e)}")
+        logger.error(f"Lỗi chi tiết khi xử lý file: {str(e)}")
         return f"Lỗi khi xử lý file: {str(e)}"
 
 # Hàm tìm kiếm
@@ -337,47 +262,24 @@ def search_documents(query, top_k=5):
         return "Vui lòng nhập câu hỏi để tìm kiếm"
     
     try:
-        formatted_results = []
+        collection = client.collections.get(COLLECTION_NAME)
+        results = collection.query.near_text(
+            query=query,
+            limit=top_k
+        )
         
-        # Kiểm tra loại client
-        if hasattr(client, 'collections'):
-            # Client v4
-            collection = client.collections.get(COLLECTION_NAME)
-            results = collection.query.near_text(
-                query=query,
-                limit=top_k
-            )
-            
-            if not results.objects:
-                return "Không tìm thấy kết quả phù hợp"
-            
-            for i, obj in enumerate(results.objects):
-                formatted_results.append(f"### Kết quả {i+1}\n")
-                formatted_results.append(f"**Nguồn:** {obj.properties['source']}\n")
-                formatted_results.append(f"**Nội dung:**\n{obj.properties['content']}\n\n")
-        else:
-            # Client v3
-            result = (
-                client.query
-                .get(COLLECTION_NAME, ["content", "source"])
-                .with_near_text({"concepts": [query]})
-                .with_limit(top_k)
-                .do()
-            )
-            
-            objects = result.get("data", {}).get("Get", {}).get(COLLECTION_NAME, [])
-            
-            if not objects:
-                return "Không tìm thấy kết quả phù hợp"
-            
-            for i, obj in enumerate(objects):
-                formatted_results.append(f"### Kết quả {i+1}\n")
-                formatted_results.append(f"**Nguồn:** {obj['source']}\n")
-                formatted_results.append(f"**Nội dung:**\n{obj['content']}\n\n")
+        if not results.objects:
+            return "Không tìm thấy kết quả phù hợp"
+        
+        formatted_results = []
+        for i, obj in enumerate(results.objects):
+            formatted_results.append(f"### Kết quả {i+1}\n")
+            formatted_results.append(f"**Nguồn:** {obj.properties['source']}\n")
+            formatted_results.append(f"**Nội dung:**\n{obj.properties['content']}\n\n")
         
         return "\n".join(formatted_results)
     except Exception as e:
-        print(f"Lỗi chi tiết khi tìm kiếm: {str(e)}")
+        logger.error(f"Lỗi chi tiết khi tìm kiếm: {str(e)}")
         return f"Lỗi khi tìm kiếm: {str(e)}"
 
 # Hàm trả lời câu hỏi với RAG
@@ -406,6 +308,7 @@ def answer_question(query, provider=DEFAULT_LLM_PROVIDER):
         
         return formatted_answer
     except Exception as e:
+        logger.error(f"Lỗi khi xử lý câu hỏi: {str(e)}")
         return f"Lỗi khi xử lý câu hỏi: {str(e)}"
 
 # Tạo giao diện Gradio
@@ -441,9 +344,9 @@ with gr.Blocks(title="RAG với Weaviate và Gemini/OpenAI") as demo:
                     label="Chọn Mô Hình",
                     choices={
                         "gemini": ["gemini-2.0-flash"],
-                        "openai": ["gpt-4o-mini", "gpt-4o"]
+                        "openai": ["gpt-4o"]
                     }[DEFAULT_LLM_PROVIDER],
-                    value="gemini-2.0-flash" if DEFAULT_LLM_PROVIDER == "gemini" else "gpt-4o-mini",
+                    value="gemini-2.0-flash" if DEFAULT_LLM_PROVIDER == "gemini" else "gpt-4o",
                     interactive=True
                 )
         
@@ -465,8 +368,8 @@ with gr.Blocks(title="RAG với Weaviate và Gemini/OpenAI") as demo:
                 }
             else:
                 return {
-                    "choices": ["gpt-4o-mini", "gpt-4o"],
-                    "value": "gpt-4o-mini",
+                    "choices": ["gpt-4o"],
+                    "value": "gpt-4o",
                 }
         
         provider.change(
@@ -495,21 +398,12 @@ with gr.Blocks(title="RAG với Weaviate và Gemini/OpenAI") as demo:
             if not query:
                 return "Vui lòng nhập câu hỏi", ""
             
-            # Giới hạn model theo provider
-            if provider == "gemini":
-                actual_model = "gemini-2.0-flash"  # Chỉ cho phép model này
-            else:
-                if model not in ["gpt-4o-mini", "gpt-4o"]:
-                    actual_model = "gpt-4o-mini"  # Mặc định
-                else:
-                    actual_model = model
-            
             # Cập nhật biến môi trường tạm thời
             if provider == "gemini":
-                os.environ["GEMINI_MODEL"] = actual_model
+                os.environ["GEMINI_MODEL"] = model
                 os.environ["GEMINI_TEMPERATURE"] = str(temp)
             else:
-                os.environ["OPENAI_MODEL"] = actual_model
+                os.environ["OPENAI_MODEL"] = model
                 os.environ["OPENAI_TEMPERATURE"] = str(temp)
             
             # Gọi hàm LLM với mô hình và temperature đã chọn
@@ -548,9 +442,9 @@ if __name__ == "__main__":
         root_path = "/" + root_path
     
     # In thông tin truy cập
-    print(f"Khởi động ứng dụng Gradio trên {server_name}:{server_port} với root_path='{root_path}'")
+    logger.info(f"Khởi động ứng dụng Gradio trên {server_name}:{server_port} với root_path='{root_path}'")
     if server_name == "0.0.0.0":
-        print(f"Bạn có thể truy cập ứng dụng qua địa chỉ IP của máy chủ: http://IP-ADDRESS:{server_port}")
+        logger.info(f"Bạn có thể truy cập ứng dụng qua địa chỉ IP của máy chủ: http://IP-ADDRESS:{server_port}")
     
     # Khởi động Gradio
     try:
@@ -560,9 +454,9 @@ if __name__ == "__main__":
             root_path=root_path
         )
     except Exception as e:
-        print(f"Lỗi khi khởi động Gradio: {e}")
+        logger.error(f"Lỗi khi khởi động Gradio: {e}")
         # Thử lại với root_path khác
-        print("Thử lại với root_path=''...")
+        logger.info("Thử lại với root_path=''...")
         demo.queue().launch(
             server_name=server_name, 
             server_port=server_port,
