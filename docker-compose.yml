@@ -6,12 +6,18 @@ services:
             - 8000:8080
         container_name: embedding-model
         image: semitechnologies/transformers-inference:sentence-transformers-multi-qa-MiniLM-L6-cos-v1
+        restart: always
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
 
     weaviate:
         image: semitechnologies/weaviate:1.29.1
         ports:
             - 8080:8080
-        restart: on-failure:0
+        restart: always
         container_name: weaviate-db
         environment:
             QUERY_DEFAULTS_LIMIT: 25
@@ -20,10 +26,16 @@ services:
             DEFAULT_VECTORIZER_MODULE: 'text2vec-transformers'
             ENABLE_MODULES: 'text2vec-transformers'
             TRANSFORMERS_INFERENCE_API: 'http://transformers-inference:8080'
+            LOG_LEVEL: 'debug'
         volumes:
             - weaviate_data:/var/lib/weaviate
         depends_on:
             - transformers-inference
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8080/v1/meta"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
     
     app:
         build:

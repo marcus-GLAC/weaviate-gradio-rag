@@ -24,9 +24,9 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "gemini")
 
 # Lấy cài đặt mô hình
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0"))
 
 # Lấy URL Weaviate từ biến môi trường hoặc dùng giá trị mặc định
@@ -39,13 +39,40 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 # Kết nối Weaviate
 def connect_to_weaviate():
     try:
+        # Lấy URL từ biến môi trường
+        weaviate_url = os.getenv("WEAVIATE_URL", "http://localhost:8080")
+        print(f"Đang kết nối đến Weaviate tại: {weaviate_url}")
+        
+        # Thử ping trước khi kết nối
+        import requests
+        try:
+            response = requests.get(f"{weaviate_url}/v1/meta")
+            if response.status_code != 200:
+                print(f"Weaviate không phản hồi tại {weaviate_url}, status code: {response.status_code}")
+                print(f"Response: {response.text}")
+        except requests.exceptions.RequestException as e:
+            print(f"Không thể ping đến Weaviate: {e}")
+        
+        # Kết nối với timeout cao hơn
         client = weaviate.Client(
-            url=WEAVIATE_URL,
+            url=weaviate_url,
+            timeout_config=(5, 15)  # (Kết nối timeout, Đọc timeout)
         )
-        print(f"Weaviate connection status: {client.is_ready()}")
+        
+        # Kiểm tra kết nối
+        is_ready = client.is_ready()
+        print(f"Weaviate connection status: {is_ready}")
+        
+        if not is_ready:
+            print("Weaviate kết nối được nhưng báo chưa sẵn sàng")
+            
         return client
     except Exception as e:
-        print(f"Không thể kết nối với Weaviate: {e}")
+        print(f"Lỗi kết nối đến Weaviate: {e}")
+        print("Vui lòng kiểm tra:")
+        print("1. Docker và container Weaviate đã chạy chưa? (docker ps)")
+        print("2. URL kết nối có đúng không? (mặc định: http://localhost:8080)")
+        print("3. Weaviate container có lỗi không? (docker logs weaviate-db)")
         return None
 
 client = connect_to_weaviate()
@@ -131,15 +158,20 @@ def get_retriever(k=5):
 # Khởi tạo LLM dựa trên provider
 def get_llm(provider=DEFAULT_LLM_PROVIDER, temperature=None):
     if provider == "openai" and OPENAI_API_KEY:
+        # Đảm bảo model là một trong những model được cho phép
+        model_name = OPENAI_MODEL
+        if model_name not in ["gpt-4o", "gpt-4o-mini"]:
+            model_name = "gpt-4o-mini"  # Mặc định nếu cấu hình không hợp lệ
+            
         return ChatOpenAI(
             openai_api_key=OPENAI_API_KEY,
-            model_name=OPENAI_MODEL,
+            model_name=model_name,
             temperature=OPENAI_TEMPERATURE if temperature is None else temperature
         )
     elif provider == "gemini" and GOOGLE_API_KEY:
         return ChatGoogleGenerativeAI(
             google_api_key=GOOGLE_API_KEY,
-            model=GEMINI_MODEL,
+            model="gemini-2.0-flash",  # Chỉ cho phép model này
             temperature=GEMINI_TEMPERATURE if temperature is None else temperature
         )
     else:
@@ -296,40 +328,44 @@ with gr.Blocks(title="RAG với Weaviate và Gemini/OpenAI") as demo:
     
     with gr.Tab("Chat RAG"):
         with gr.Row():
-            with gr.Column():
+            with gr.Column(scale=1):
                 provider = gr.Radio(
                     ["gemini", "openai"], 
                     label="Chọn LLM Provider", 
-                    value=DEFAULT_LLM_PROVIDER
+                    value=DEFAULT_LLM_PROVIDER,
+                    interactive=True
                 )
-            with gr.Column():
+            with gr.Column(scale=2):
                 model_dropdown = gr.Dropdown(
                     label="Chọn Mô Hình",
                     choices={
-                        "gemini": ["gemini-pro", "gemini-1.5-pro"],
-                        "openai": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]
+                        "gemini": ["gemini-2.0-flash"],
+                        "openai": ["gpt-4o-mini", "gpt-4o"]
                     }[DEFAULT_LLM_PROVIDER],
-                    value=GEMINI_MODEL if DEFAULT_LLM_PROVIDER == "gemini" else OPENAI_MODEL
+                    value="gemini-2.0-flash" if DEFAULT_LLM_PROVIDER == "gemini" else "gpt-4o-mini",
+                    interactive=True
                 )
-                temperature = gr.Slider(
-                    minimum=0, 
-                    maximum=1, 
-                    value=GEMINI_TEMPERATURE if DEFAULT_LLM_PROVIDER == "gemini" else OPENAI_TEMPERATURE,
-                    step=0.1, 
-                    label="Temperature"
-                )
+        
+        temperature = gr.Slider(
+            minimum=0, 
+            maximum=1, 
+            value=0.1,
+            step=0.1, 
+            label="Temperature (độ sáng tạo)",
+            info="Giá trị thấp cho câu trả lời chính xác, giá trị cao cho câu trả lời sáng tạo"
+        )
         
         # Cập nhật lựa chọn mô hình khi thay đổi provider
         def update_model_choices(provider_value):
             if provider_value == "gemini":
                 return {
-                    "choices": ["gemini-pro", "gemini-1.5-pro"],
-                    "value": GEMINI_MODEL,
+                    "choices": ["gemini-2.0-flash"],
+                    "value": "gemini-2.0-flash",
                 }
             else:
                 return {
-                    "choices": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
-                    "value": OPENAI_MODEL,
+                    "choices": ["gpt-4o-mini", "gpt-4o"],
+                    "value": "gpt-4o-mini",
                 }
         
         provider.change(
@@ -338,30 +374,64 @@ with gr.Blocks(title="RAG với Weaviate và Gemini/OpenAI") as demo:
             outputs=model_dropdown,
         )
         
-        rag_query = gr.Textbox(label="Nhập câu hỏi của bạn")
-        rag_button = gr.Button("Trả lời")
+        with gr.Row():
+            with gr.Column(scale=4):
+                rag_query = gr.Textbox(
+                    label="Nhập câu hỏi của bạn",
+                    placeholder="Nhập câu hỏi để tìm thông tin từ tài liệu...",
+                    lines=2
+                )
+            with gr.Column(scale=1):
+                rag_button = gr.Button("Trả lời", variant="primary")
+        
         rag_output = gr.Markdown(label="Câu trả lời")
+        
+        # Các nguồn tham khảo
+        sources_output = gr.Markdown(label="Nguồn tham khảo", visible=False)
         
         # Cập nhật hàm answer_question để sử dụng model và temperature
         def answer_with_model(query, provider, model, temp):
             if not query:
-                return "Vui lòng nhập câu hỏi"
+                return "Vui lòng nhập câu hỏi", ""
+            
+            # Giới hạn model theo provider
+            if provider == "gemini":
+                actual_model = "gemini-2.0-flash"  # Chỉ cho phép model này
+            else:
+                if model not in ["gpt-4o-mini", "gpt-4o"]:
+                    actual_model = "gpt-4o-mini"  # Mặc định
+                else:
+                    actual_model = model
             
             # Cập nhật biến môi trường tạm thời
             if provider == "gemini":
-                os.environ["GEMINI_MODEL"] = model
+                os.environ["GEMINI_MODEL"] = actual_model
                 os.environ["GEMINI_TEMPERATURE"] = str(temp)
             else:
-                os.environ["OPENAI_MODEL"] = model
+                os.environ["OPENAI_MODEL"] = actual_model
                 os.environ["OPENAI_TEMPERATURE"] = str(temp)
             
             # Gọi hàm LLM với mô hình và temperature đã chọn
-            return answer_question(query, provider)
+            answer = answer_question(query, provider)
+            
+            # Tách câu trả lời và nguồn tham khảo
+            if "### Nguồn tham khảo:" in answer:
+                parts = answer.split("### Nguồn tham khảo:")
+                answer_text = parts[0].strip()
+                sources = "### Nguồn tham khảo:" + parts[1]
+                return answer_text, sources
+            
+            return answer, ""
+        
+        # Cập nhật hàm xử lý khi nhấn nút
+        def on_rag_button_click(query, provider, model, temp):
+            answer, sources = answer_with_model(query, provider, model, temp)
+            return answer, sources, gr.update(visible=bool(sources))
         
         rag_button.click(
-            fn=answer_with_model, 
+            fn=on_rag_button_click, 
             inputs=[rag_query, provider, model_dropdown, temperature], 
-            outputs=rag_output
+            outputs=[rag_output, sources_output, sources_output]
         )
 
 # Khởi chạy ứng dụng

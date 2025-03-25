@@ -6,9 +6,11 @@
 
 - Import file PDF và TXT vào vector database
 - Tìm kiếm thông tin trong các tài liệu đã import
-- Chat với nội dung tài liệu sử dụng Gemini hoặc OpenAI
-- Lựa chọn nhiều mô hình khác nhau (Gemini Pro, GPT-3.5, GPT-4, v.v.)
-- Điều chỉnh tham số sinh văn bản (temperature)
+- Chat với nội dung tài liệu sử dụng các mô hình AI mới nhất:
+  - **Gemini**: gemini-2.0-flash
+  - **OpenAI**: gpt-4o-mini, gpt-4o
+- Giao diện người dùng đơn giản, thân thiện
+- Hiển thị nguồn tham khảo cho mỗi câu trả lời
 
 ## Cài Đặt & Chạy
 
@@ -53,24 +55,62 @@
 
 3. **Chat RAG**
    - Chọn tab "Chat RAG"
-   - Chọn mô hình (Gemini hoặc OpenAI)
+   - Chọn mô hình LLM (Gemini hoặc OpenAI)
+   - Chọn mô hình cụ thể từ dropdown
+   - Điều chỉnh temperature nếu cần
    - Nhập câu hỏi và nhận câu trả lời dựa trên nội dung đã import
+
+## Khắc Phục Sự Cố
+
+### Lỗi "Không thể kết nối Weaviate"
+
+1. **Kiểm tra trạng thái các container**
+   ```bash
+   docker ps
+   ```
+   
+   Tất cả các container (weaviate-db, embedding-model, rag-app) phải đang chạy.
+
+2. **Kiểm tra logs**
+   ```bash
+   docker logs weaviate-db
+   ```
+
+3. **Khởi động lại các service**
+   ```bash
+   docker-compose down
+   docker-compose up -d
+   ```
+
+4. **Đảm bảo mạng Docker đúng**
+   ```bash
+   docker network ls
+   ```
+   
+   Nếu có lỗi kết nối giữa các container:
+   ```bash
+   docker-compose down
+   docker network prune
+   docker-compose up -d
+   ```
+
+5. **Kiểm tra cổng và tường lửa**
+   Đảm bảo cổng 8080 không bị chặn và Weaviate có thể truy cập.
 
 ## Cấu Hình Trên Hosting
 
 Nếu chạy trên hosting, cần đảm bảo:
 
-1. Cổng 7860 được mở:
+1. Cổng 7860 và 8080 được mở:
    ```bash
    sudo ufw allow 7860/tcp
+   sudo ufw allow 8080/tcp
    ```
 
 2. Truy cập qua địa chỉ IP của hosting:
    ```
    http://<địa-chỉ-IP>:7860
    ```
-
-3. (Tùy chọn) Cấu hình Nginx làm reverse proxy và SSL nếu cần
 
 ## Cấu Trúc Dự Án
 
