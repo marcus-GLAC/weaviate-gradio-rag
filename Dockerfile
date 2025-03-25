@@ -16,6 +16,8 @@ COPY requirements.txt .
 
 # Cài đặt dependencies
 RUN pip install --no-cache-dir -U pip && \
+    pip install --no-cache-dir gradio==4.0.2 && \
+    pip install --no-cache-dir weaviate-client==3.26.7 && \
     pip install --no-cache-dir -r requirements.txt
 
 # Tạo thư mục uploads
@@ -31,6 +33,7 @@ EXPOSE 7860
 # Đặt các biến môi trường
 ENV GRADIO_SERVER_NAME=0.0.0.0
 ENV GRADIO_SERVER_PORT=7860
+ENV GRADIO_ROOT_PATH=/
 
 # Chạy ứng dụng Gradio
 CMD ["python", "app.py"] 

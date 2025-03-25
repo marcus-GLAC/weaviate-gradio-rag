@@ -1,5 +1,5 @@
-weaviate-client>=4.0.0
-gradio>=4.0.0
+weaviate-client==3.26.7
+gradio==4.0.2
 langchain>=0.0.267
 langchain-community>=0.0.1
 langchain-openai>=0.0.1

@@ -540,16 +540,31 @@ if __name__ == "__main__":
     # Lấy cấu hình từ biến môi trường
     server_name = os.getenv("GRADIO_SERVER_NAME", "0.0.0.0")
     server_port = int(os.getenv("GRADIO_SERVER_PORT", 7860))
-    root_path = os.getenv("GRADIO_ROOT_PATH", "/")
+    
+    # Xử lý root_path một cách an toàn
+    root_path = os.getenv("GRADIO_ROOT_PATH", "")
+    # Đảm bảo root_path bắt đầu bằng "/" hoặc là chuỗi rỗng
+    if root_path and not root_path.startswith("/"):
+        root_path = "/" + root_path
     
     # In thông tin truy cập
-    print(f"Khởi động ứng dụng Gradio trên {server_name}:{server_port}")
+    print(f"Khởi động ứng dụng Gradio trên {server_name}:{server_port} với root_path='{root_path}'")
     if server_name == "0.0.0.0":
         print(f"Bạn có thể truy cập ứng dụng qua địa chỉ IP của máy chủ: http://IP-ADDRESS:{server_port}")
     
     # Khởi động Gradio
-    demo.queue().launch(
-        server_name=server_name,
-        server_port=server_port,
-        root_path=root_path
-    ) 
+    try:
+        demo.queue().launch(
+            server_name=server_name,
+            server_port=server_port,
+            root_path=root_path
+        )
+    except Exception as e:
+        print(f"Lỗi khi khởi động Gradio: {e}")
+        # Thử lại với root_path khác
+        print("Thử lại với root_path=''...")
+        demo.queue().launch(
+            server_name=server_name, 
+            server_port=server_port,
+            root_path=""
+        ) 
