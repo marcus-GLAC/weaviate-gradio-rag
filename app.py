@@ -50,25 +50,37 @@ def connect_to_weaviate():
             if response.status_code != 200:
                 print(f"Weaviate không phản hồi tại {weaviate_url}, status code: {response.status_code}")
                 print(f"Response: {response.text}")
+            else:
+                print(f"Ping thành công đến Weaviate tại {weaviate_url}")
         except requests.exceptions.RequestException as e:
             print(f"Không thể ping đến Weaviate: {e}")
         
-        # Kết nối sử dụng Weaviate Client v4 thay vì v3
-        client = weaviate.WeaviateClient(
-            connection_params=weaviate.connect.ConnectionParams.from_url(
-                url=weaviate_url,
-                timeout_config=(5, 15)  # (Kết nối timeout, Đọc timeout)
-            )
-        )
-        
-        # Kiểm tra kết nối 
-        is_ready = client.is_ready()
-        print(f"Weaviate connection status: {is_ready}")
-        
-        if not is_ready:
-            print("Weaviate kết nối được nhưng báo chưa sẵn sàng")
+        # Sử dụng client v3 để đảm bảo tương thích
+        try:
+            # Thử với client v3 trước
+            import weaviate
+            print("Thử kết nối với Weaviate client v3")
+            client = weaviate.Client(url=weaviate_url)
+            print(f"Kết nối thành công với Weaviate client v3: {client.is_ready()}")
+            return client
+        except Exception as e:
+            print(f"Lỗi khi kết nối với client v3: {e}")
             
-        return client
+            # Thử với client v4 nếu v3 không hoạt động
+            try:
+                print("Thử kết nối với Weaviate client v4")
+                client = weaviate.WeaviateClient(
+                    connection_params=weaviate.connect.ConnectionParams.from_url(
+                        url=weaviate_url,
+                        timeout_config=(5, 15)
+                    )
+                )
+                print(f"Kết nối thành công với Weaviate client v4: {client.is_ready()}")
+                return client
+            except Exception as e2:
+                print(f"Lỗi khi kết nối với client v4: {e2}")
+                raise Exception(f"Không thể kết nối với Weaviate qua cả v3 và v4: {e}, {e2}")
+        
     except Exception as e:
         print(f"Lỗi kết nối đến Weaviate: {e}")
         print("Vui lòng kiểm tra:")
@@ -88,41 +100,81 @@ def create_schema():
         return "Không thể kết nối với Weaviate"
     
     try:
-        # Kiểm tra xem collection đã tồn tại chưa
-        try:
-            # Thử lấy collection
-            client.collections.get(COLLECTION_NAME)
-            print(f"Collection '{COLLECTION_NAME}' đã tồn tại")
+        # Kiểm tra loại client để xử lý tương ứng
+        if hasattr(client, 'collections'):
+            # Client v4
+            print("Đang sử dụng Weaviate Client v4 để tạo schema")
+            try:
+                # Thử lấy collection
+                collection = client.collections.get(COLLECTION_NAME)
+                print(f"Collection '{COLLECTION_NAME}' đã tồn tại (v4)")
+                return True
+            except Exception as e:
+                print(f"Collection chưa tồn tại, đang tạo mới (v4): {e}")
+                # Collection chưa tồn tại, tạo mới
+                client.collections.create(
+                    name=COLLECTION_NAME,
+                    description="Document chunks for RAG",
+                    properties=[
+                        {
+                            "name": "content",
+                            "dataType": ["text"],
+                            "description": "The content of the document chunk",
+                            "indexSearchable": True,
+                        },
+                        {
+                            "name": "source",
+                            "dataType": ["text"],
+                            "description": "The source file of the document",
+                            "indexSearchable": True,
+                        },
+                        {
+                            "name": "chunk_id",
+                            "dataType": ["text"],
+                            "description": "The chunk ID within the document",
+                        }
+                    ],
+                    vectorizer_config=weaviate.classes.Configure.Vectorizer.text2vec_transformers(),
+                )
+                print(f"Collection '{COLLECTION_NAME}' đã được tạo thành công (v4)")
+                return True
+        else:
+            # Client v3
+            print("Đang sử dụng Weaviate Client v3 để tạo schema")
+            # Kiểm tra xem schema đã tồn tại chưa
+            schema = client.schema.get()
+            existing_classes = [c["class"] for c in schema.get("classes", [])]
+            
+            if COLLECTION_NAME not in existing_classes:
+                # Tạo schema với client v3
+                schema_definition = {
+                    "class": COLLECTION_NAME,
+                    "description": "Document chunks for RAG",
+                    "vectorizer": "text2vec-transformers",
+                    "properties": [
+                        {
+                            "name": "content",
+                            "dataType": ["text"],
+                            "description": "The content of the document chunk",
+                        },
+                        {
+                            "name": "source",
+                            "dataType": ["text"],
+                            "description": "The source file of the document",
+                        },
+                        {
+                            "name": "chunk_id",
+                            "dataType": ["text"],
+                            "description": "The chunk ID within the document",
+                        }
+                    ]
+                }
+                client.schema.create_class(schema_definition)
+                print(f"Schema '{COLLECTION_NAME}' đã được tạo thành công (v3)")
+            else:
+                print(f"Schema '{COLLECTION_NAME}' đã tồn tại (v3)")
+            
             return True
-        except:
-            # Collection chưa tồn tại, tạo mới
-            client.collections.create(
-                name=COLLECTION_NAME,
-                description="Document chunks for RAG",
-                properties=[
-                    {
-                        "name": "content",
-                        "dataType": ["text"],
-                        "description": "The content of the document chunk",
-                        "indexSearchable": True,
-                    },
-                    {
-                        "name": "source",
-                        "dataType": ["text"],
-                        "description": "The source file of the document",
-                        "indexSearchable": True,
-                    },
-                    {
-                        "name": "chunk_id",
-                        "dataType": ["text"],
-                        "description": "The chunk ID within the document",
-                    }
-                ],
-                vectorizer_config=weaviate.classes.Configure.Vectorizer.text2vec_transformers(),
-            )
-            print(f"Collection '{COLLECTION_NAME}' đã được tạo thành công")
-            return True
-    
     except Exception as e:
         print(f"Lỗi khi tạo schema: {e}")
         return False
@@ -140,12 +192,28 @@ def get_vectorstore():
     if client is None:
         return None
     
-    return Weaviate(
-        client=client,
-        index_name=COLLECTION_NAME,
-        text_key="content",
-        embedding=embeddings,
-    )
+    try:
+        # Thiết lập Weaviate cho Langchain
+        return Weaviate(
+            client=client,
+            index_name=COLLECTION_NAME,
+            text_key="content",
+            embedding=embeddings,
+            by_text=False  # Sử dụng Weaviate's vectorizer
+        )
+    except Exception as e:
+        print(f"Lỗi khi tạo vector store: {str(e)}")
+        try:
+            # Thử với cấu hình khác
+            return Weaviate(
+                client=client,
+                index_name=COLLECTION_NAME,
+                text_key="content",
+                embedding=embeddings,
+            )
+        except Exception as e2:
+            print(f"Lỗi khi tạo vector store (lần 2): {str(e2)}")
+            return None
 
 # Tạo retriever
 def get_retriever(k=5):
@@ -230,22 +298,34 @@ def process_file(file_obj):
         )
         chunks = text_splitter.split_documents(documents)
         
-        # Lấy collection
-        collection = client.collections.get(COLLECTION_NAME)
-        
-        # Import các chunk vào Weaviate
+        # Import các chunk vào Weaviate dựa vào loại client
         for i, chunk in enumerate(chunks):
             chunk_id = str(uuid.uuid4())
-            collection.data.insert(
-                properties={
-                    "content": chunk.page_content,
-                    "source": original_filename,
-                    "chunk_id": chunk_id
-                }
-            )
+            # Kiểm tra loại client
+            if hasattr(client, 'collections'):
+                # Client v4
+                collection = client.collections.get(COLLECTION_NAME)
+                collection.data.insert(
+                    properties={
+                        "content": chunk.page_content,
+                        "source": original_filename,
+                        "chunk_id": chunk_id
+                    }
+                )
+            else:
+                # Client v3
+                client.data_object.create(
+                    {
+                        "content": chunk.page_content,
+                        "source": original_filename,
+                        "chunk_id": chunk_id
+                    },
+                    COLLECTION_NAME
+                )
         
         return f"Đã import thành công {len(chunks)} chunks từ file {original_filename}"
     except Exception as e:
+        print(f"Lỗi chi tiết khi xử lý file: {str(e)}")
         return f"Lỗi khi xử lý file: {str(e)}"
 
 # Hàm tìm kiếm
@@ -257,26 +337,47 @@ def search_documents(query, top_k=5):
         return "Vui lòng nhập câu hỏi để tìm kiếm"
     
     try:
-        # Lấy collection
-        collection = client.collections.get(COLLECTION_NAME)
-        
-        # Tìm kiếm semantically
-        results = collection.query.near_text(
-            query=query,
-            limit=top_k
-        )
-        
-        if not results.objects:
-            return "Không tìm thấy kết quả phù hợp"
-        
         formatted_results = []
-        for i, obj in enumerate(results.objects):
-            formatted_results.append(f"### Kết quả {i+1}\n")
-            formatted_results.append(f"**Nguồn:** {obj.properties['source']}\n")
-            formatted_results.append(f"**Nội dung:**\n{obj.properties['content']}\n\n")
+        
+        # Kiểm tra loại client
+        if hasattr(client, 'collections'):
+            # Client v4
+            collection = client.collections.get(COLLECTION_NAME)
+            results = collection.query.near_text(
+                query=query,
+                limit=top_k
+            )
+            
+            if not results.objects:
+                return "Không tìm thấy kết quả phù hợp"
+            
+            for i, obj in enumerate(results.objects):
+                formatted_results.append(f"### Kết quả {i+1}\n")
+                formatted_results.append(f"**Nguồn:** {obj.properties['source']}\n")
+                formatted_results.append(f"**Nội dung:**\n{obj.properties['content']}\n\n")
+        else:
+            # Client v3
+            result = (
+                client.query
+                .get(COLLECTION_NAME, ["content", "source"])
+                .with_near_text({"concepts": [query]})
+                .with_limit(top_k)
+                .do()
+            )
+            
+            objects = result.get("data", {}).get("Get", {}).get(COLLECTION_NAME, [])
+            
+            if not objects:
+                return "Không tìm thấy kết quả phù hợp"
+            
+            for i, obj in enumerate(objects):
+                formatted_results.append(f"### Kết quả {i+1}\n")
+                formatted_results.append(f"**Nguồn:** {obj['source']}\n")
+                formatted_results.append(f"**Nội dung:**\n{obj['content']}\n\n")
         
         return "\n".join(formatted_results)
     except Exception as e:
+        print(f"Lỗi chi tiết khi tìm kiếm: {str(e)}")
         return f"Lỗi khi tìm kiếm: {str(e)}"
 
 # Hàm trả lời câu hỏi với RAG
