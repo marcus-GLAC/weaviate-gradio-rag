@@ -19,12 +19,36 @@ services:
             PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
             DEFAULT_VECTORIZER_MODULE: 'text2vec-transformers'
             ENABLE_MODULES: 'text2vec-transformers'
-            TRANSFORMERS_INFERENCE_API: 'http://46.202.162.249:8080'
+            TRANSFORMERS_INFERENCE_API: 'http://transformers-inference:8080'
         volumes:
             - weaviate_data:/var/lib/weaviate
         depends_on:
             - transformers-inference
+    
+    app:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        ports:
+            - "7860:7860"
+        container_name: rag-app
+        restart: always
+        environment:
+            - WEAVIATE_URL=http://weaviate:8080
+            - GRADIO_SERVER_NAME=0.0.0.0
+            - GRADIO_SERVER_PORT=7860
+            - GRADIO_ROOT_PATH=/
+            - GRADIO_ALLOWED_ORIGINS=*
+        env_file:
+            - .env
+        volumes:
+            - ./uploads:/app/uploads
+        depends_on:
+            - weaviate
+            - transformers-inference
 
 volumes:
     weaviate_data:
+        driver: local
+    uploads:
         driver: local

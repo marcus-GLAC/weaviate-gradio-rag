@@ -1,4 +1,5 @@
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -28,11 +29,18 @@ OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0"))
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
 GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0"))
 
+# Lấy URL Weaviate từ biến môi trường hoặc dùng giá trị mặc định
+WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
+UPLOADS_DIR = os.getenv("UPLOADS_DIR", "./uploads")
+
+# Đảm bảo thư mục uploads tồn tại
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+
 # Kết nối Weaviate
 def connect_to_weaviate():
     try:
         client = weaviate.Client(
-            url="http://localhost:8080",
+            url=WEAVIATE_URL,
         )
         print(f"Weaviate connection status: {client.is_ready()}")
         return client
@@ -160,22 +168,26 @@ def process_file(file_obj):
         return "Vui lòng chọn file để import"
     
     try:
-        # Lưu file tạm
-        temp_file = tempfile.NamedTemporaryFile(delete=False)
-        file_obj.save(temp_file.name)
-        temp_path = temp_file.name
-        
         # Lấy tên file gốc và phần mở rộng
         original_filename = file_obj.name
         file_extension = os.path.splitext(original_filename)[1].lower()
         
+        # Tạo đường dẫn đến file trong thư mục uploads
+        timestamp = int(time.time())
+        saved_filename = f"{timestamp}_{original_filename}"
+        saved_path = os.path.join(UPLOADS_DIR, saved_filename)
+        
+        # Lưu file
+        with open(saved_path, 'wb') as f:
+            shutil.copyfileobj(file_obj.file, f)
+        
         # Xử lý dựa trên loại file
         if file_extension == '.pdf':
-            loader = PyPDFLoader(temp_path)
+            loader = PyPDFLoader(saved_path)
         elif file_extension == '.txt':
-            loader = TextLoader(temp_path)
+            loader = TextLoader(saved_path)
         else:
-            os.unlink(temp_path)
+            os.remove(saved_path)
             return f"Không hỗ trợ định dạng file {file_extension}"
         
         # Load và chia nhỏ văn bản
@@ -198,9 +210,6 @@ def process_file(file_obj):
                 },
                 COLLECTION_NAME
             )
-        
-        # Xóa file tạm
-        os.unlink(temp_path)
         
         return f"Đã import thành công {len(chunks)} chunks từ file {original_filename}"
     except Exception as e:
@@ -357,4 +366,19 @@ with gr.Blocks(title="RAG với Weaviate và Gemini/OpenAI") as demo:
 
 # Khởi chạy ứng dụng
 if __name__ == "__main__":
-    demo.launch() 
+    # Lấy cấu hình từ biến môi trường
+    server_name = os.getenv("GRADIO_SERVER_NAME", "0.0.0.0")
+    server_port = int(os.getenv("GRADIO_SERVER_PORT", 7860))
+    root_path = os.getenv("GRADIO_ROOT_PATH", "/")
+    
+    # In thông tin truy cập
+    print(f"Khởi động ứng dụng Gradio trên {server_name}:{server_port}")
+    if server_name == "0.0.0.0":
+        print(f"Bạn có thể truy cập ứng dụng qua địa chỉ IP của máy chủ: http://IP-ADDRESS:{server_port}")
+    
+    # Khởi động Gradio
+    demo.queue().launch(
+        server_name=server_name,
+        server_port=server_port,
+        root_path=root_path
+    ) 

@@ -34,15 +34,43 @@
    GEMINI_MODEL=gemini-pro  # hoặc gemini-1.5-pro
    GEMINI_TEMPERATURE=0
    ```
-4. Khởi động Docker containers:
+4. Khởi động toàn bộ ứng dụng bằng Docker:
    ```
    docker-compose up -d
    ```
-5. Chạy ứng dụng:
-   ```
-   pip install -r requirements.txt
-   python app.py
-   ```
+5. Truy cập ứng dụng:
+   - Nếu chạy trên máy tính cá nhân: http://localhost:7860
+   - Nếu chạy trên hosting/server: http://<địa-chỉ-IP-của-hosting>:7860
+   - Nếu bạn có tên miền: http://<tên-miền>:7860 (sau khi đã cấu hình DNS)
+
+Docker sẽ tự động tạo:
+- Container cho mô hình embedding (transformers-inference)
+- Container cho Weaviate database
+- Container cho ứng dụng Gradio
+- Volume để lưu trữ dữ liệu Weaviate
+- Volume để lưu trữ các file được tải lên
+
+### Các lệnh Docker hữu ích
+
+- Xem logs của ứng dụng:
+  ```
+  docker-compose logs -f app
+  ```
+
+- Khởi động lại ứng dụng:
+  ```
+  docker-compose restart app
+  ```
+
+- Dừng toàn bộ ứng dụng:
+  ```
+  docker-compose down
+  ```
+
+- Dừng toàn bộ ứng dụng và xóa dữ liệu:
+  ```
+  docker-compose down -v
+  ```
 
 ### Cài đặt thủ công
 
@@ -78,3 +106,30 @@
 ## Giấy phép
 
 MIT License
+
+### Cấu hình cho hosting
+
+Nếu bạn triển khai trên hosting, hãy đảm bảo:
+
+1. Mở cổng 7860 trong tường lửa của hosting
+   ```bash
+   # Ví dụ trên Ubuntu với UFW
+   sudo ufw allow 7860/tcp
+   ```
+
+2. Nếu máy chủ sử dụng Firewalld:
+   ```bash
+   sudo firewall-cmd --permanent --add-port=7860/tcp
+   sudo firewall-cmd --reload
+   ```
+
+3. Kiểm tra xem cổng đã được mở chưa:
+   ```bash
+   # Với netstat
+   sudo netstat -tuln | grep 7860
+   
+   # Hoặc với ss
+   sudo ss -tuln | grep 7860
+   ```
+   
+4. Nếu muốn bảo mật hơn, bạn có thể cấu hình một reverse proxy (như Nginx) và SSL.
