@@ -28,6 +28,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "gemini")
 
+# Log để kiểm tra API keys
+logger.info(f"DEFAULT_LLM_PROVIDER: {DEFAULT_LLM_PROVIDER}")
+logger.info(f"GOOGLE_API_KEY exists: {bool(GOOGLE_API_KEY)}")
+logger.info(f"OPENAI_API_KEY exists: {bool(OPENAI_API_KEY)}")
+
 # Lấy cài đặt mô hình
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
 OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0"))

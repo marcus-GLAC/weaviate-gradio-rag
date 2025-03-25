@@ -57,10 +57,14 @@ services:
             - GRADIO_SERVER_PORT=7860
             - GRADIO_ROOT_PATH=/
             - GRADIO_ALLOWED_ORIGINS=*
+            - DEFAULT_LLM_PROVIDER=gemini
+            - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+            - OPENAI_API_KEY=${OPENAI_API_KEY}
         env_file:
             - .env
         volumes:
             - ./uploads:/app/uploads
+            - ./.env:/app/.env
         depends_on:
             - weaviate
             - transformers-inference
