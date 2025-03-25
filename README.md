@@ -7,6 +7,8 @@
 - Import file PDF và TXT
 - Tìm kiếm thông tin trong file đã import
 - Chat RAG với sự hỗ trợ của AI (Gemini hoặc OpenAI)
+- Lựa chọn mô hình cụ thể (GPT-3.5, GPT-4, Gemini Pro, Gemini 1.5 Pro)
+- Điều chỉnh temperature của mô hình AI
 - Giao diện thân thiện với người dùng thông qua Gradio
 
 ## Cài đặt
@@ -23,6 +25,14 @@
    OPENAI_API_KEY=your_openai_api_key_here
    GOOGLE_API_KEY=your_google_api_key_here
    DEFAULT_LLM_PROVIDER=gemini  # hoặc openai
+   
+   # Cài đặt mô hình OpenAI (Tùy chọn)
+   OPENAI_MODEL=gpt-3.5-turbo  # hoặc gpt-4, gpt-4-turbo
+   OPENAI_TEMPERATURE=0
+   
+   # Cài đặt mô hình Gemini (Tùy chọn)
+   GEMINI_MODEL=gemini-pro  # hoặc gemini-1.5-pro
+   GEMINI_TEMPERATURE=0
    ```
 4. Khởi động Docker containers:
    ```

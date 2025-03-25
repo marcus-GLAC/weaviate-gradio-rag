@@ -22,6 +22,12 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "gemini")
 
+# Lấy cài đặt mô hình
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+OPENAI_TEMPERATURE = float(os.getenv("OPENAI_TEMPERATURE", "0"))
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-pro")
+GEMINI_TEMPERATURE = float(os.getenv("GEMINI_TEMPERATURE", "0"))
+
 # Kết nối Weaviate
 def connect_to_weaviate():
     try:
@@ -115,18 +121,18 @@ def get_retriever(k=5):
     return None
 
 # Khởi tạo LLM dựa trên provider
-def get_llm(provider=DEFAULT_LLM_PROVIDER, temperature=0):
+def get_llm(provider=DEFAULT_LLM_PROVIDER, temperature=None):
     if provider == "openai" and OPENAI_API_KEY:
         return ChatOpenAI(
             openai_api_key=OPENAI_API_KEY,
-            model_name="gpt-3.5-turbo",
-            temperature=temperature
+            model_name=OPENAI_MODEL,
+            temperature=OPENAI_TEMPERATURE if temperature is None else temperature
         )
     elif provider == "gemini" and GOOGLE_API_KEY:
         return ChatGoogleGenerativeAI(
             google_api_key=GOOGLE_API_KEY,
-            model="gemini-pro",
-            temperature=temperature
+            model=GEMINI_MODEL,
+            temperature=GEMINI_TEMPERATURE if temperature is None else temperature
         )
     else:
         return None
@@ -280,16 +286,74 @@ with gr.Blocks(title="RAG với Weaviate và Gemini/OpenAI") as demo:
         search_button.click(fn=search_documents, inputs=[query_input, top_k], outputs=search_output)
     
     with gr.Tab("Chat RAG"):
-        provider = gr.Radio(
-            ["gemini", "openai"], 
-            label="Chọn LLM", 
-            value=DEFAULT_LLM_PROVIDER
+        with gr.Row():
+            with gr.Column():
+                provider = gr.Radio(
+                    ["gemini", "openai"], 
+                    label="Chọn LLM Provider", 
+                    value=DEFAULT_LLM_PROVIDER
+                )
+            with gr.Column():
+                model_dropdown = gr.Dropdown(
+                    label="Chọn Mô Hình",
+                    choices={
+                        "gemini": ["gemini-pro", "gemini-1.5-pro"],
+                        "openai": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"]
+                    }[DEFAULT_LLM_PROVIDER],
+                    value=GEMINI_MODEL if DEFAULT_LLM_PROVIDER == "gemini" else OPENAI_MODEL
+                )
+                temperature = gr.Slider(
+                    minimum=0, 
+                    maximum=1, 
+                    value=GEMINI_TEMPERATURE if DEFAULT_LLM_PROVIDER == "gemini" else OPENAI_TEMPERATURE,
+                    step=0.1, 
+                    label="Temperature"
+                )
+        
+        # Cập nhật lựa chọn mô hình khi thay đổi provider
+        def update_model_choices(provider_value):
+            if provider_value == "gemini":
+                return {
+                    "choices": ["gemini-pro", "gemini-1.5-pro"],
+                    "value": GEMINI_MODEL,
+                }
+            else:
+                return {
+                    "choices": ["gpt-3.5-turbo", "gpt-4", "gpt-4-turbo"],
+                    "value": OPENAI_MODEL,
+                }
+        
+        provider.change(
+            fn=update_model_choices,
+            inputs=provider,
+            outputs=model_dropdown,
         )
+        
         rag_query = gr.Textbox(label="Nhập câu hỏi của bạn")
         rag_button = gr.Button("Trả lời")
         rag_output = gr.Markdown(label="Câu trả lời")
         
-        rag_button.click(fn=answer_question, inputs=[rag_query, provider], outputs=rag_output)
+        # Cập nhật hàm answer_question để sử dụng model và temperature
+        def answer_with_model(query, provider, model, temp):
+            if not query:
+                return "Vui lòng nhập câu hỏi"
+            
+            # Cập nhật biến môi trường tạm thời
+            if provider == "gemini":
+                os.environ["GEMINI_MODEL"] = model
+                os.environ["GEMINI_TEMPERATURE"] = str(temp)
+            else:
+                os.environ["OPENAI_MODEL"] = model
+                os.environ["OPENAI_TEMPERATURE"] = str(temp)
+            
+            # Gọi hàm LLM với mô hình và temperature đã chọn
+            return answer_question(query, provider)
+        
+        rag_button.click(
+            fn=answer_with_model, 
+            inputs=[rag_query, provider, model_dropdown, temperature], 
+            outputs=rag_output
+        )
 
 # Khởi chạy ứng dụng
 if __name__ == "__main__":
